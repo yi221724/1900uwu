@@ -252,24 +252,154 @@ async function setupStickerSystem() {
     });
 
     const stickerToggleBtn = document.getElementById('sticker-toggle-btn');
-    stickerToggleBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const msgInput = document.getElementById('message-input');
-        const isKeyboardOpen = (document.activeElement === msgInput);
-        
-        if (msgInput) msgInput.blur(); // 强制收起键盘
+    if (stickerToggleBtn) {
+        stickerToggleBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const msgInput = document.getElementById('message-input');
+            const isKeyboardOpen = (document.activeElement === msgInput);
+            
+            if (msgInput) msgInput.blur(); // 强制收起键盘
 
-        if (isKeyboardOpen) {
-             // 键盘 -> 面板：无动画
-             showPanel('sticker', true);
-        } else {
-            if (chatExpansionPanel.classList.contains('visible') && panelStickerArea.style.display !== 'none') {
-                showPanel('none'); // 面板 -> 关闭：默认有动画
+            if (isKeyboardOpen) {
+                 // 键盘 -> 面板：无动画
+                 showPanel('sticker', true);
             } else {
-                // 关闭 -> 面板 或 面板(功能) -> 面板(表情)：默认有动画
-                showPanel('sticker');
+                if (chatExpansionPanel.classList.contains('visible') && panelStickerArea.style.display !== 'none') {
+                    showPanel('none'); // 面板 -> 关闭：默认有动画
+                } else {
+                    // 关闭 -> 面板 或 面板(功能) -> 面板(表情)：默认有动画
+                    showPanel('sticker');
+                }
             }
+        });
+    }
+
+    // ===== 表情包智能匹配（默认开启） =====
+    // 参考 sticker(1).js 的匹配逻辑：根据表情包名称包含输入文字进行匹配。
+    // 不依赖 stickerSmartMatchEnabled 开关；所有聊天默认启用。
+    const SMART_MATCH_LIMIT = 12;
+    let smartMatchDebounceTimer = null;
+    let smartMatchBar = null;
+    let smartMatchList = null;
+    let smartMatchInput = null;
+
+    function ensureStickerSmartMatchBar() {
+        if (smartMatchBar && smartMatchList) return true;
+
+        smartMatchBar = document.getElementById('sticker-smart-match-bar');
+        smartMatchList = document.getElementById('sticker-smart-match-list');
+
+        // 如果 HTML 中没有预置容器，则自动创建，避免依赖特定 HTML 版本。
+        if (!smartMatchBar) {
+            smartMatchBar = document.createElement('div');
+            smartMatchBar.id = 'sticker-smart-match-bar';
+            smartMatchBar.style.display = 'none';
+            document.body.appendChild(smartMatchBar);
         }
+        if (!smartMatchList) {
+            smartMatchList = document.createElement('div');
+            smartMatchList.id = 'sticker-smart-match-list';
+            smartMatchBar.appendChild(smartMatchList);
+        }
+        return true;
+    }
+
+    function positionStickerSmartMatchBar() {
+        if (!smartMatchBar || !smartMatchInput) return;
+        const rect = smartMatchInput.getBoundingClientRect();
+        const gap = 8;
+        const maxHeight = Math.min(190, Math.max(110, rect.top - 12));
+        smartMatchBar.style.left = `${Math.max(8, rect.left)}px`;
+        smartMatchBar.style.width = `${Math.max(220, rect.width)}px`;
+        smartMatchBar.style.bottom = `${Math.max(8, window.innerHeight - rect.top + gap)}px`;
+        smartMatchBar.style.maxHeight = `${maxHeight}px`;
+    }
+
+    function hideStickerSmartMatchBar() {
+        if (!ensureStickerSmartMatchBar()) return;
+        smartMatchBar.style.display = 'none';
+        smartMatchList.innerHTML = '';
+    }
+
+    function updateStickerSmartMatchBar(msgInput) {
+        if (!msgInput) return;
+        ensureStickerSmartMatchBar();
+        smartMatchInput = msgInput;
+
+        const text = (msgInput.value || '').trim().toLowerCase();
+        if (!text) {
+            hideStickerSmartMatchBar();
+            return;
+        }
+
+        const matched = (db.myStickers || [])
+            .filter(s => (s.name || '').toLowerCase().includes(text))
+            .slice(0, SMART_MATCH_LIMIT);
+
+        if (matched.length === 0) {
+            hideStickerSmartMatchBar();
+            return;
+        }
+
+        smartMatchList.innerHTML = '';
+        matched.forEach(sticker => {
+            const item = document.createElement('div');
+            item.className = 'sticker-smart-match-item';
+            item.title = sticker.name || '';
+
+            const img = document.createElement('img');
+            img.src = sticker.data || '';
+            img.alt = sticker.name || '表情';
+
+            const name = document.createElement('span');
+            name.className = 'sticker-smart-match-name';
+            name.textContent = sticker.name || '';
+
+            item.appendChild(img);
+            item.appendChild(name);
+
+            item.addEventListener('mousedown', (e) => e.preventDefault());
+            item.addEventListener('click', async () => {
+                await sendSticker(sticker);
+                hideStickerSmartMatchBar();
+                msgInput.value = '';
+                msgInput.focus();
+            });
+            smartMatchList.appendChild(item);
+        });
+
+        positionStickerSmartMatchBar();
+        smartMatchBar.style.display = 'block';
+    }
+
+    // 使用事件委托，兼容聊天输入框由其他模块动态注入的情况。
+    document.addEventListener('input', (e) => {
+        const msgInput = e.target && e.target.id === 'message-input' ? e.target : null;
+        if (!msgInput) return;
+        clearTimeout(smartMatchDebounceTimer);
+        smartMatchDebounceTimer = setTimeout(() => updateStickerSmartMatchBar(msgInput), 200);
+    });
+
+    document.addEventListener('focusin', (e) => {
+        const msgInput = e.target && e.target.id === 'message-input' ? e.target : null;
+        if (!msgInput) return;
+        ensureStickerSmartMatchBar();
+        if ((msgInput.value || '').trim()) updateStickerSmartMatchBar(msgInput);
+    });
+
+    document.addEventListener('focusout', (e) => {
+        const msgInput = e.target && e.target.id === 'message-input' ? e.target : null;
+        if (!msgInput) return;
+        clearTimeout(smartMatchDebounceTimer);
+        setTimeout(() => {
+            if (document.activeElement !== msgInput && !smartMatchBar?.contains(document.activeElement)) {
+                hideStickerSmartMatchBar();
+            }
+        }, 150);
+    });
+
+    window.addEventListener('resize', () => {
+        if (smartMatchBar && smartMatchBar.style.display !== 'none') positionStickerSmartMatchBar();
     });
 }
 
