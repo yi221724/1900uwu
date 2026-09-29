@@ -252,83 +252,102 @@ async function setupStickerSystem() {
     });
 
     const stickerToggleBtn = document.getElementById('sticker-toggle-btn');
-    if (stickerToggleBtn) {
-        stickerToggleBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            const msgInput = document.getElementById('message-input');
-            const isKeyboardOpen = (document.activeElement === msgInput);
-            
-            if (msgInput) msgInput.blur(); // 强制收起键盘
+    stickerToggleBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const msgInput = document.getElementById('message-input');
+        const isKeyboardOpen = (document.activeElement === msgInput);
+        
+        if (msgInput) msgInput.blur(); // 强制收起键盘
 
-            if (isKeyboardOpen) {
-                 // 键盘 -> 面板：无动画
-                 showPanel('sticker', true);
+        if (isKeyboardOpen) {
+             // 键盘 -> 面板：无动画
+             showPanel('sticker', true);
+        } else {
+            if (chatExpansionPanel.classList.contains('visible') && panelStickerArea.style.display !== 'none') {
+                showPanel('none'); // 面板 -> 关闭：默认有动画
             } else {
-                if (chatExpansionPanel.classList.contains('visible') && panelStickerArea.style.display !== 'none') {
-                    showPanel('none'); // 面板 -> 关闭：默认有动画
-                } else {
-                    // 关闭 -> 面板 或 面板(功能) -> 面板(表情)：默认有动画
-                    showPanel('sticker');
-                }
+                // 关闭 -> 面板 或 面板(功能) -> 面板(表情)：默认有动画
+                showPanel('sticker');
             }
-        });
-    }
+        }
+    });
 
-    // ===== 表情包智能匹配（默认开启） =====
-    // 参考 sticker(1).js 的匹配逻辑：根据表情包名称包含输入文字进行匹配。
-    // 不依赖 stickerSmartMatchEnabled 开关；所有聊天默认启用。
+    // 表情包智能匹配：输入框打字时在输入框上方显示匹配的表情，默认开启
+    const msgInput = document.getElementById('message-input');
+    const smartMatchBar = document.getElementById('sticker-smart-match-bar');
+    const smartMatchList = document.getElementById('sticker-smart-match-list');
     const SMART_MATCH_LIMIT = 12;
     let smartMatchDebounceTimer = null;
-    let smartMatchBar = null;
-    let smartMatchList = null;
-    let smartMatchInput = null;
 
-    function ensureStickerSmartMatchBar() {
-        if (smartMatchBar && smartMatchList) return true;
-
-        smartMatchBar = document.getElementById('sticker-smart-match-bar');
-        smartMatchList = document.getElementById('sticker-smart-match-list');
-
-        // 如果 HTML 中没有预置容器，则自动创建，避免依赖特定 HTML 版本。
-        if (!smartMatchBar) {
-            smartMatchBar = document.createElement('div');
-            smartMatchBar.id = 'sticker-smart-match-bar';
-            smartMatchBar.style.display = 'none';
-            document.body.appendChild(smartMatchBar);
-        }
-        if (!smartMatchList) {
-            smartMatchList = document.createElement('div');
-            smartMatchList.id = 'sticker-smart-match-list';
-            smartMatchBar.appendChild(smartMatchList);
-        }
-        return true;
+    if (!document.getElementById('sticker-smart-match-style')) {
+        const style = document.createElement('style');
+        style.id = 'sticker-smart-match-style';
+        style.textContent = `
+            .input-wrapper { position: relative; }
+            .sticker-smart-match-bar {
+                position: absolute;
+                left: 0;
+                right: 0;
+                bottom: calc(100% + 8px);
+                z-index: 1000;
+                padding: 8px;
+                border-radius: 14px;
+                background: var(--chat-bottom-bar-bg, #fff);
+                box-shadow: 0 4px 18px rgba(0,0,0,.12);
+                border: 1px solid rgba(0,0,0,.06);
+                max-width: min(420px, 90vw);
+                box-sizing: border-box;
+            }
+            .sticker-smart-match-list {
+                display: flex;
+                gap: 8px;
+                overflow-x: auto;
+                scrollbar-width: none;
+            }
+            .sticker-smart-match-list::-webkit-scrollbar { display: none; }
+            .sticker-smart-match-item {
+                flex: 0 0 58px;
+                width: 58px;
+                padding: 4px;
+                border-radius: 10px;
+                cursor: pointer;
+                text-align: center;
+                box-sizing: border-box;
+                background: rgba(0,0,0,.03);
+            }
+            .sticker-smart-match-item:active {
+                transform: scale(.94);
+                background: rgba(0,0,0,.08);
+            }
+            .sticker-smart-match-item img {
+                display: block;
+                width: 48px;
+                height: 48px;
+                object-fit: contain;
+                margin: 0 auto 3px;
+                border-radius: 7px;
+            }
+            .sticker-smart-match-name {
+                display: block;
+                overflow: hidden;
+                white-space: nowrap;
+                text-overflow: ellipsis;
+                font-size: 10px;
+                line-height: 14px;
+                color: var(--text-color, #555);
+            }
+        `;
+        document.head.appendChild(style);
     }
 
-    function positionStickerSmartMatchBar() {
-        if (!smartMatchBar || !smartMatchInput) return;
-        const rect = smartMatchInput.getBoundingClientRect();
-        const gap = 8;
-        const maxHeight = Math.min(190, Math.max(110, rect.top - 12));
-        smartMatchBar.style.left = `${Math.max(8, rect.left)}px`;
-        smartMatchBar.style.width = `${Math.max(220, rect.width)}px`;
-        smartMatchBar.style.bottom = `${Math.max(8, window.innerHeight - rect.top + gap)}px`;
-        smartMatchBar.style.maxHeight = `${maxHeight}px`;
-    }
-
-    function hideStickerSmartMatchBar() {
-        if (!ensureStickerSmartMatchBar()) return;
-        smartMatchBar.style.display = 'none';
-        smartMatchList.innerHTML = '';
-    }
-
-    function updateStickerSmartMatchBar(msgInput) {
-        if (!msgInput) return;
-        ensureStickerSmartMatchBar();
-        smartMatchInput = msgInput;
+    function updateStickerSmartMatchBar() {
+        if (!smartMatchBar || !smartMatchList || !msgInput) return;
 
         const text = (msgInput.value || '').trim().toLowerCase();
+
         if (!text) {
-            hideStickerSmartMatchBar();
+            smartMatchBar.style.display = 'none';
+            smartMatchList.innerHTML = '';
             return;
         }
 
@@ -337,70 +356,53 @@ async function setupStickerSystem() {
             .slice(0, SMART_MATCH_LIMIT);
 
         if (matched.length === 0) {
-            hideStickerSmartMatchBar();
+            smartMatchBar.style.display = 'none';
+            smartMatchList.innerHTML = '';
             return;
         }
 
         smartMatchList.innerHTML = '';
+
         matched.forEach(sticker => {
             const item = document.createElement('div');
             item.className = 'sticker-smart-match-item';
             item.title = sticker.name || '';
+            item.innerHTML = `
+                <img src="${sticker.data}" alt="${sticker.name || ''}">
+                <span class="sticker-smart-match-name">${sticker.name || ''}</span>
+            `;
 
-            const img = document.createElement('img');
-            img.src = sticker.data || '';
-            img.alt = sticker.name || '表情';
-
-            const name = document.createElement('span');
-            name.className = 'sticker-smart-match-name';
-            name.textContent = sticker.name || '';
-
-            item.appendChild(img);
-            item.appendChild(name);
-
-            item.addEventListener('mousedown', (e) => e.preventDefault());
-            item.addEventListener('click', async () => {
-                await sendSticker(sticker);
-                hideStickerSmartMatchBar();
+            item.addEventListener('click', () => {
+                sendSticker(sticker);
+                smartMatchBar.style.display = 'none';
+                smartMatchList.innerHTML = '';
                 msgInput.value = '';
                 msgInput.focus();
             });
+
             smartMatchList.appendChild(item);
         });
 
-        positionStickerSmartMatchBar();
         smartMatchBar.style.display = 'block';
     }
 
-    // 使用事件委托，兼容聊天输入框由其他模块动态注入的情况。
-    document.addEventListener('input', (e) => {
-        const msgInput = e.target && e.target.id === 'message-input' ? e.target : null;
-        if (!msgInput) return;
-        clearTimeout(smartMatchDebounceTimer);
-        smartMatchDebounceTimer = setTimeout(() => updateStickerSmartMatchBar(msgInput), 200);
-    });
+    if (msgInput) {
+        msgInput.addEventListener('input', () => {
+            clearTimeout(smartMatchDebounceTimer);
+            smartMatchDebounceTimer = setTimeout(updateStickerSmartMatchBar, 200);
+        });
 
-    document.addEventListener('focusin', (e) => {
-        const msgInput = e.target && e.target.id === 'message-input' ? e.target : null;
-        if (!msgInput) return;
-        ensureStickerSmartMatchBar();
-        if ((msgInput.value || '').trim()) updateStickerSmartMatchBar(msgInput);
-    });
+        msgInput.addEventListener('blur', () => {
+            clearTimeout(smartMatchDebounceTimer);
+            setTimeout(() => {
+                if (smartMatchBar && document.activeElement !== msgInput) {
+                    smartMatchBar.style.display = 'none';
+                }
+            }, 150);
+        });
 
-    document.addEventListener('focusout', (e) => {
-        const msgInput = e.target && e.target.id === 'message-input' ? e.target : null;
-        if (!msgInput) return;
-        clearTimeout(smartMatchDebounceTimer);
-        setTimeout(() => {
-            if (document.activeElement !== msgInput && !smartMatchBar?.contains(document.activeElement)) {
-                hideStickerSmartMatchBar();
-            }
-        }, 150);
-    });
-
-    window.addEventListener('resize', () => {
-        if (smartMatchBar && smartMatchBar.style.display !== 'none') positionStickerSmartMatchBar();
-    });
+        msgInput.addEventListener('focus', updateStickerSmartMatchBar);
+    }
 }
 
 function renderStickerCategories() {
