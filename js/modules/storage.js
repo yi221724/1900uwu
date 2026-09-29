@@ -453,16 +453,9 @@ async function handleImport(event) {
 
     try {
         let jsonString;
-        if (file.name.toLowerCase().endsWith('.ee')) {
-            // iOS WKWebView/PakePlus 某些版本对 File.stream() 支持不稳定。
-            // 先读取 ArrayBuffer，再创建 Blob/ReadableStream，可以避免选中文件后无法继续导入。
-            if (typeof DecompressionStream === 'undefined') {
-                throw new Error('当前 App 的 iOS WebView 不支持 gzip 解压，请更新 PakePlus 或 iOS 后重试。');
-            }
-            const buffer = await file.arrayBuffer();
-            const sourceBlob = new Blob([buffer], { type: 'application/octet-stream' });
+        if (file.name.endsWith('.ee')) {
             const decompressionStream = new DecompressionStream('gzip');
-            const decompressedStream = sourceBlob.stream().pipeThrough(decompressionStream);
+            const decompressedStream = file.stream().pipeThrough(decompressionStream);
             jsonString = await new Response(decompressedStream).text();
         } else {
             jsonString = await file.text();
