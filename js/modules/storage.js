@@ -58,16 +58,18 @@ async function calculateStorageSize() {
     (db.characters || []).forEach(char => {
         sizes.chats += stringifySize(char.history);
         sizes.chats += stringifySize(char.callHistory);
+        sizes.chats += stringifySize(char.archives);
         sizes.other += stringifySize(char.gallery);
         
-        const charBase = { ...char, history: undefined, callHistory: undefined, gallery: undefined };
+        const charBase = { ...char, history: undefined, callHistory: undefined, gallery: undefined, archives: undefined };
         sizes.contacts += stringifySize(charBase);
     });
     (db.groups || []).forEach(group => {
         sizes.chats += stringifySize(group.history);
         sizes.chats += stringifySize(group.callHistory);
+        sizes.chats += stringifySize(group.archives);
         
-        const groupBase = { ...group, history: undefined, callHistory: undefined };
+        const groupBase = { ...group, history: undefined, callHistory: undefined, archives: undefined };
         sizes.contacts += stringifySize(groupBase);
     });
 
@@ -101,7 +103,8 @@ async function calculateStorageSize() {
         'globalReceiveSound', 'multiMsgSoundEnabled', 'soundPresets', 'galleryPresets', 
         'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint', 'workshopSettings', 
         'workshopLlmPresets', 'workshopPromptPresets', 'homeLayoutOrder', 'homeLayoutPages', 
-        'widgetTemplates', 'addedWidgets', 'backupReminderSettings', 'stUnlocked'
+        'widgetTemplates', 'addedWidgets', 'backupReminderSettings', 'stUnlocked',
+        'homePresets', 'activeHomePresetId', 'homePresetUndo'
     ];
     settingsKeys.forEach(key => {
         sizes.settings += stringifySize(db[key]);
